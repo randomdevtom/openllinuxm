@@ -201,6 +201,8 @@ func (s *Server) Chat(ctx context.Context, model string, msgs []Message, tools [
 		"model":    model,
 		"messages": msgs,
 		"stream":   true,
+		// servers default to short replies (Quarry: 1024 tokens), which cuts big file writes in half
+		"max_tokens": 16384,
 		// thinking on/off: Quarry and llama.cpp read the template kwarg, Quarry also the top-level key
 		"chat_template_kwargs": map[string]any{"enable_thinking": think},
 		"enable_thinking":      think,

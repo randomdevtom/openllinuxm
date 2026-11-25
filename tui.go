@@ -293,7 +293,20 @@ func (m *model) render(b *block) string {
 			}
 		}
 		if t := strings.TrimSpace(b.text); t != "" {
-			if b.done && m.md != nil {
+			if i := strings.Index(t, "<tool_call>"); i >= 0 {
+				// raw tool-call markup (the server could not parse it, e.g. the reply was cut off):
+				// show what came before it and one line instead of the markup
+				n := strings.Count(t[i:], "\n") + 1
+				t = strings.TrimSpace(t[:i])
+				note := sDim.Render(fmt.Sprintf("⚙ writing a tool call… (%d lines)", n))
+				if b.done {
+					note = lipgloss.NewStyle().Foreground(cWarn).Render(fmt.Sprintf("⚠ unfinished tool call (%d lines), not run", n))
+				}
+				if t != "" {
+					out = append(out, lipgloss.NewStyle().Foreground(cText).Render(wrap(t, w)))
+				}
+				out = append(out, note)
+			} else if b.done && m.md != nil {
 				if r, err := m.md.Render(t); err == nil {
 					out = append(out, strings.Trim(r, "\n"))
 				} else {

@@ -27,6 +27,8 @@ func toolDefs() []any {
 	return []any{
 		fn("read_file", "Read a text file.", map[string]any{"path": str("file path")}, "path"),
 		fn("write_file", "Create or overwrite a file.", map[string]any{"path": str("file path"), "content": str("full content")}, "path", "content"),
+		fn("append_file", "Append text to a file. Write big files in parts: write_file the first part, append_file the rest.",
+			map[string]any{"path": str("file path"), "content": str("text to add")}, "path", "content"),
 		fn("edit_file", "Replace one exact, unique snippet in a file. Prefer this to rewriting a file.",
 			map[string]any{"path": str("file path"), "old": str("exact text to replace"), "new": str("replacement")}, "path", "old", "new"),
 		fn("list_files", "List a directory.", map[string]any{"path": str("directory, default .")}),
@@ -38,7 +40,7 @@ func toolDefs() []any {
 
 // fallback for servers without tool calling: the same tools as a fenced JSON block
 const textToolPrompt = "\nTo use a tool, reply with ONLY:\n```tool\n{\"tool\":\"NAME\",...args}\n```\n" +
-	"Tools: read_file{path} write_file{path,content} edit_file{path,old,new} list_files{path} delete_file{path} run{command,timeout}. " +
+	"Tools: read_file{path} write_file{path,content} append_file{path,content} edit_file{path,old,new} list_files{path} delete_file{path} run{command,timeout}. " +
 	"One tool per reply; the result comes back as [tool_result]."
 
 var textToolRe = regexp.MustCompile("(?s)```tool\\s*\\n(.*?)\\n```")

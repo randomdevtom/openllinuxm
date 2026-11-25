@@ -165,6 +165,14 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 				calls = []ToolCall{*tc}
 			}
 		}
+		if len(calls) == 0 && res.Finish == "length" {
+			// cut off at the reply limit, usually in the middle of a long tool call: keep the
+			// history short and ask for the work in smaller pieces
+			a.send(evInfo{"reply hit the length limit: asking the model to write in smaller parts"})
+			a.msgs = append(a.msgs, Message{Role: "assistant", Content: "(reply cut off at the length limit)"},
+				Message{Role: "user", Content: "Your last reply was cut off at the length limit before it finished. Redo it in smaller steps: write_file at most ~150 lines, then append_file the rest in parts."})
+			continue
+		}
 		if len(calls) == 0 {
 			a.msgs = append(a.msgs, Message{Role: "assistant", Content: content})
 			if goal && !strings.Contains(content, "GOAL_COMPLETED") && nudges < 3 {
