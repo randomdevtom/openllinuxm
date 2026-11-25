@@ -18,10 +18,12 @@ const (
 	maxGoalHops = 60 // in /goal mode
 )
 
-// systemPrompt is short on purpose: local models re-read it on every cold start.
-func systemPrompt(dir string, textTools bool) string {
-	p := fmt.Sprintf("You are openLLinuxM, a coding assistant in the user's Linux terminal. Working directory: %s. "+
-		"Use the tools to inspect, edit and run things; prefer edit_file to rewriting files. Be brief. Answer in Markdown.", dir)
+// systemPrompt is short and the same in every folder: local servers cache the prompt prefix,
+// so the working directory goes in the first user message instead.
+func systemPrompt(textTools bool) string {
+	p := "You are openLLinuxM, a coding assistant in the user's Linux terminal. " +
+		"Use the tools to inspect, edit and run things; paths are relative to the working directory. " +
+		"Prefer edit_file to rewriting files. Be brief. Answer in Markdown."
 	if textTools {
 		p += textToolPrompt
 	}
@@ -78,7 +80,7 @@ func NewAgent(dir string) *Agent {
 }
 
 func (a *Agent) Reset() {
-	a.msgs = []Message{{Role: "system", Content: systemPrompt(a.dir, a.textTools)}}
+	a.msgs = []Message{{Role: "system", Content: systemPrompt(a.textTools)}}
 }
 
 func (a *Agent) logf(role, text string) {
@@ -113,6 +115,9 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 	if goal {
 		user = "GOAL: " + user + "\nWork autonomously with the tools: do, verify, fix. When the goal is fully done, reply GOAL_COMPLETED and a short summary."
 	}
+	if len(a.msgs) == 1 {
+		user = "[working directory: " + a.dir + "]\n" + user
+	}
 	a.msgs = append(a.msgs, Message{Role: "user", Content: user})
 	a.logf("user", user)
 	limit, nudges := maxHops, 0
@@ -131,7 +136,7 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 		})
 		if errors.Is(err, ErrToolsUnsupported) {
 			a.textTools = true
-			a.msgs[0].Content = systemPrompt(a.dir, true)
+			a.msgs[0].Content = systemPrompt(true)
 			a.send(evInfo{"this model has no native tool calling: using text tool blocks"})
 			hop--
 			continue
