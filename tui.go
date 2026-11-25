@@ -73,6 +73,7 @@ type block struct {
 	cache             string
 	cacheW            int
 	cacheThink, dirty bool
+	at                time.Time
 }
 
 // ---------------- model ----------------
@@ -191,12 +192,21 @@ func (m *model) layout() {
 func (m *model) refresh(forceBottom bool) {
 	atBottom := m.vp.AtBottom() || forceBottom
 	var parts []string
+	label := "\n  " + gradient("◆ openLLinuxM", true)
+	needLabel := false // the first visible reply or tool line after a user message gets the name
 	for _, b := range m.blocks {
+		if b.kind == kUser {
+			needLabel = true
+		}
 		if b.dirty || b.cacheW != m.w || b.cacheThink != m.showThink || !b.done {
 			b.cache = m.render(b)
 			b.cacheW, b.cacheThink, b.dirty = m.w, m.showThink, false
 		}
 		if b.cache != "" {
+			if needLabel && (b.kind == kAssistant || b.kind == kTool) {
+				parts = append(parts, label)
+				needLabel = false
+			}
 			parts = append(parts, b.cache)
 		}
 	}
@@ -256,9 +266,10 @@ func (m *model) render(b *block) string {
 	pad := lipgloss.NewStyle().PaddingLeft(2)
 	switch b.kind {
 	case kUser:
-		bar := lipgloss.NewStyle().Border(lipgloss.ThickBorder(), false, false, false, true).
-			BorderForeground(cUser).PaddingLeft(1).Foreground(cText)
-		return "\n" + pad.Render(bar.Render(wrap(b.text, w-2)))
+		head := lipgloss.NewStyle().Foreground(cUser).Bold(true).Render("● you") + sFaint.Render("  "+b.at.Format("15:04"))
+		bubble := lipgloss.NewStyle().Background(lipgloss.Color("#2a2140")).Foreground(lipgloss.Color("#f1ecff")).
+			Padding(0, 1).Width(w).Render(b.text)
+		return "\n" + pad.Render(head+"\n"+bubble)
 	case kAssistant:
 		var out []string
 		if b.reasoning != "" {
@@ -336,7 +347,7 @@ func (m *model) render(b *block) string {
 }
 
 func (m *model) add(b *block) *block {
-	b.dirty = true
+	b.dirty, b.at = true, time.Now()
 	m.blocks = append(m.blocks, b)
 	return b
 }
