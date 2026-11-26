@@ -1,4 +1,4 @@
-package main
+package llm
 
 import (
 	"bufio"
@@ -53,8 +53,8 @@ func getJSON(ctx context.Context, c *http.Client, url string, out any) error {
 	return json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(out)
 }
 
-// probe asks one base URL what it is and which models it has.
-func probe(ctx context.Context, name, base string) (*Server, error) {
+// Probe asks one base URL what it is and which models it has.
+func Probe(ctx context.Context, name, base string) (*Server, error) {
 	s := &Server{Name: name, URL: strings.TrimRight(base, "/"), Kind: "openai"}
 	var st QuarryStats
 	if getJSON(ctx, probeClient, s.URL+"/v1/stats", &st) == nil && st.Arch != "" {
@@ -105,7 +105,7 @@ func Discover(ctx context.Context, extra []string) []*Server {
 		wg.Add(1)
 		go func(i int, j job) {
 			defer wg.Done()
-			if s, err := probe(ctx, j.name, j.url); err == nil {
+			if s, err := Probe(ctx, j.name, j.url); err == nil {
 				out[i] = s
 			}
 		}(i, j)
@@ -172,8 +172,11 @@ type ToolCall struct {
 }
 
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
+	// the model's thinking for this reply, sent back so the server can render the history as
+	// generated and keep its prompt cache (Quarry, llama.cpp, vLLM read this field)
+	Reasoning  string     `json:"reasoning_content,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 }

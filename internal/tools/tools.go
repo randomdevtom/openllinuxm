@@ -1,9 +1,10 @@
-package main
+package tools
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/randomdevtom/openllinuxm/internal/llm"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,39 +16,39 @@ import (
 
 const maxOut = 12000 // characters of tool output sent back to the model
 
-// tool schemas, kept short: every word here is in every prompt
-func toolDefs() []any {
+// Defs: the tool schemas, kept short: every word here is in every prompt
+func Defs() []any {
 	fn := func(name, desc string, props map[string]any, req ...string) any {
 		return map[string]any{"type": "function", "function": map[string]any{
 			"name": name, "description": desc,
 			"parameters": map[string]any{"type": "object", "properties": props, "required": req},
 		}}
 	}
-	str := func(d string) map[string]any { return map[string]any{"type": "string", "description": d} }
+	desc := func(d string) map[string]any { return map[string]any{"type": "string", "description": d} }
 	return []any{
-		fn("read_file", "Read a text file.", map[string]any{"path": str("file path")}, "path"),
-		fn("write_file", "Create or overwrite a file.", map[string]any{"path": str("file path"), "content": str("full content")}, "path", "content"),
+		fn("read_file", "Read a text file.", map[string]any{"path": desc("file path")}, "path"),
+		fn("write_file", "Create or overwrite a file.", map[string]any{"path": desc("file path"), "content": desc("full content")}, "path", "content"),
 		fn("append_file", "Append text to a file. Write big files in parts: write_file the first part, append_file the rest.",
-			map[string]any{"path": str("file path"), "content": str("text to add")}, "path", "content"),
+			map[string]any{"path": desc("file path"), "content": desc("text to add")}, "path", "content"),
 		fn("edit_file", "Replace one exact, unique snippet in a file. Prefer this to rewriting a file.",
-			map[string]any{"path": str("file path"), "old": str("exact text to replace"), "new": str("replacement")}, "path", "old", "new"),
-		fn("list_files", "List a directory.", map[string]any{"path": str("directory, default .")}),
-		fn("delete_file", "Delete a file (the user confirms).", map[string]any{"path": str("file path")}, "path"),
+			map[string]any{"path": desc("file path"), "old": desc("exact text to replace"), "new": desc("replacement")}, "path", "old", "new"),
+		fn("list_files", "List a directory.", map[string]any{"path": desc("directory, default .")}),
+		fn("delete_file", "Delete a file (the user confirms).", map[string]any{"path": desc("file path")}, "path"),
 		fn("run", "Run a shell command; returns exit code and output.",
-			map[string]any{"command": str("bash command"), "timeout": map[string]any{"type": "integer", "description": "seconds, default 120"}}, "command"),
+			map[string]any{"command": desc("bash command"), "timeout": map[string]any{"type": "integer", "description": "seconds, default 120"}}, "command"),
 	}
 }
 
 // fallback for servers without tool calling: the same tools as a fenced JSON block
-const textToolPrompt = "\nTo use a tool, reply with ONLY:\n```tool\n{\"tool\":\"NAME\",...args}\n```\n" +
+const TextPrompt = "\nTo use a tool, reply with ONLY:\n```tool\n{\"tool\":\"NAME\",...args}\n```\n" +
 	"Tools: read_file{path} write_file{path,content} append_file{path,content} edit_file{path,old,new} list_files{path} delete_file{path} run{command,timeout}. " +
 	"One tool per reply; the result comes back as [tool_result]."
 
-var textToolRe = regexp.MustCompile("(?s)```tool\\s*\\n(.*?)\\n```")
+var textRe = regexp.MustCompile("(?s)```tool\\s*\\n(.*?)\\n```")
 
-// parseTextTool turns a ```tool block into a ToolCall (name + JSON arguments).
-func parseTextTool(s string) (*ToolCall, error) {
-	m := textToolRe.FindStringSubmatch(s)
+// ParseText turns a ```tool block into a ToolCall (name + JSON arguments).
+func ParseText(s string) (*llm.ToolCall, error) {
+	m := textRe.FindStringSubmatch(s)
 	if m == nil {
 		return nil, nil
 	}
@@ -61,7 +62,7 @@ func parseTextTool(s string) (*ToolCall, error) {
 		name = "run"
 	}
 	args, _ := json.Marshal(obj)
-	tc := &ToolCall{ID: fmt.Sprintf("text_%d", time.Now().UnixNano()), Type: "function"}
+	tc := &llm.ToolCall{ID: fmt.Sprintf("text_%d", time.Now().UnixNano()), Type: "function"}
 	tc.Function.Name, tc.Function.Arguments = name, string(args)
 	return tc, nil
 }
@@ -72,22 +73,23 @@ var dangerous = []string{"rm -rf /", "rm -rf ~", "rm -rf *", "mkfs", "dd if=", "
 func NeedsConfirm(name string, args map[string]any, yolo bool) (bool, string) {
 	switch name {
 	case "delete_file":
-		return true, "delete " + str(args["path"])
+		return true, "delete " + Str(args["path"])
 	case "run":
-		cmd := strings.ToLower(str(args["command"]))
+		cmd := strings.ToLower(Str(args["command"]))
 		for _, d := range dangerous {
 			if strings.Contains(cmd, d) {
-				return true, "run a risky command: " + str(args["command"])
+				return true, "run a risky command: " + Str(args["command"])
 			}
 		}
 		if !yolo {
-			return true, "run: " + str(args["command"])
+			return true, "run: " + Str(args["command"])
 		}
 	}
 	return false, ""
 }
 
-func str(v any) string {
+// Str turns a JSON value into text.
+func Str(v any) string {
 	switch x := v.(type) {
 	case string:
 		return x
@@ -106,10 +108,10 @@ func clip(s string) string {
 	return s[:maxOut/2] + fmt.Sprintf("\n... [%d characters cut] ...\n", len(s)-maxOut) + s[len(s)-maxOut/2:]
 }
 
-// RunTool executes one call in dir and returns its result text (errors included).
-func RunTool(ctx context.Context, dir, name string, args map[string]any) (string, bool) {
+// Run executes one call in dir and returns its result text (errors included).
+func Run(ctx context.Context, dir, name string, args map[string]any) (string, bool) {
 	p := func() string {
-		path := str(args["path"])
+		path := Str(args["path"])
 		if path == "" {
 			path = "."
 		}
@@ -132,7 +134,7 @@ func RunTool(ctx context.Context, dir, name string, args map[string]any) (string
 		}
 		return clip(string(b)), true
 	case "write_file":
-		path, content := p(), str(args["content"])
+		path, content := p(), Str(args["content"])
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return fail(err)
 		}
@@ -146,13 +148,13 @@ func RunTool(ctx context.Context, dir, name string, args map[string]any) (string
 			return fail(err)
 		}
 		defer f.Close()
-		n, err := f.WriteString(str(args["content"]))
+		n, err := f.WriteString(Str(args["content"]))
 		if err != nil {
 			return fail(err)
 		}
 		return fmt.Sprintf("appended %d bytes", n), true
 	case "edit_file":
-		path, old, nw := p(), str(args["old"]), str(args["new"])
+		path, old, nw := p(), Str(args["old"]), Str(args["new"])
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return fail(err)
@@ -169,7 +171,7 @@ func RunTool(ctx context.Context, dir, name string, args map[string]any) (string
 		if err := os.WriteFile(path, []byte(strings.Replace(s, old, nw, 1)), 0o644); err != nil {
 			return fail(err)
 		}
-		return "edited " + str(args["path"]), true
+		return "edited " + Str(args["path"]), true
 	case "list_files":
 		ents, err := os.ReadDir(p())
 		if err != nil {
@@ -192,7 +194,7 @@ func RunTool(ctx context.Context, dir, name string, args map[string]any) (string
 		if err := os.Remove(p()); err != nil {
 			return fail(err)
 		}
-		return "deleted " + str(args["path"]), true
+		return "deleted " + Str(args["path"]), true
 	case "run":
 		t := 120
 		if v, ok := args["timeout"].(float64); ok && v > 0 {
@@ -203,7 +205,7 @@ func RunTool(ctx context.Context, dir, name string, args map[string]any) (string
 		}
 		cctx, cancel := context.WithTimeout(ctx, time.Duration(t)*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(cctx, "bash", "-c", str(args["command"]))
+		cmd := exec.CommandContext(cctx, "bash", "-c", Str(args["command"]))
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
 		code := 0
