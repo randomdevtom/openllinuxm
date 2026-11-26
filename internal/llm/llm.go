@@ -338,3 +338,28 @@ func (s *Server) Chat(ctx context.Context, model string, msgs []Message, tools [
 	}
 	return res, ctx.Err()
 }
+
+// Prefill asks Quarry to read the conversation with the user's message as typed so far (type-ahead),
+// without generating. Other servers ignore it. Cancelling ctx stops the server within a second.
+func (s *Server) Prefill(ctx context.Context, model string, msgs []Message, tools []any, think bool) error {
+	body := map[string]any{
+		"model": model, "messages": msgs, "stream": false, "max_tokens": 1, "quarry_prefill": true,
+		"chat_template_kwargs": map[string]any{"enable_thinking": think}, "enable_thinking": think,
+	}
+	if len(tools) > 0 {
+		body["tools"] = tools
+		body["tool_choice"] = "auto"
+	}
+	buf, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, "POST", s.URL+"/v1/chat/completions", bytes.NewReader(buf))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := chatClient.Do(req)
+	if err != nil {
+		return err
+	}
+	io.Copy(io.Discard, resp.Body)
+	return resp.Body.Close()
+}

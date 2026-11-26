@@ -290,6 +290,9 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.ta, c = m.ta.Update(k)
 	if m.ta.Value() != before {
 		m.slashSel, m.showKeys = 0, false
+		m.typeSeq++
+		seq := m.typeSeq
+		c = tea.Batch(c, tea.Tick(700*time.Millisecond, func(time.Time) tea.Msg { return typedTick{seq} }))
 	}
 	// grow the input with its content, up to 8 lines
 	if h := min(8, max(1, m.ta.LineCount())); h != m.ta.Height() {
@@ -369,6 +372,7 @@ func (m *model) submit(text string) tea.Cmd {
 	m.add(&block{kind: kUser, text: label, done: true})
 	m.busy, m.turnStart, m.quitArmed, m.turnTokens, m.showKeys = true, time.Now(), false, 0, false
 	m.verb = thinkVerbs[int(time.Now().UnixNano()/1e6)%len(thinkVerbs)]
+	m.stopTypeAhead()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	m.refresh(true)
@@ -377,3 +381,24 @@ func (m *model) submit(text string) tea.Cmd {
 }
 
 // ---------------- view ----------------
+
+// typeAhead: once typing pauses, let Quarry read the message so far (see agent.Prefill)
+func (m *model) typeAhead(seq int) {
+	text := strings.TrimSpace(m.ta.Value())
+	if seq != m.typeSeq || m.busy || m.confirm != nil || len(text) < 12 || strings.HasPrefix(text, "/") || text == m.prefilled {
+		return
+	}
+	m.stopTypeAhead()
+	m.prefilled = text
+	ctx, cancel := context.WithCancel(context.Background())
+	m.prefillCancel = cancel
+	go m.agent.Prefill(ctx, text)
+}
+
+func (m *model) stopTypeAhead() {
+	if m.prefillCancel != nil {
+		m.prefillCancel()
+		m.prefillCancel = nil
+	}
+	m.prefilled = ""
+}

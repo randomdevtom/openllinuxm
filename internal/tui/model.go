@@ -61,14 +61,17 @@ type model struct {
 	pickSel     int
 	discoverErr string
 
-	verb       string // word on the activity line, one per turn
-	turnTokens int    // tokens streamed this turn
-	running    string // tool running now
-	draft      string // the tool call the model is writing now (raw text)
-	expand     bool   // ctrl+o: show tool output in full
-	showKeys   bool   // "?" shortcuts panel
-	confirmSel int    // highlighted choice in the permission prompt
-	slashSel   int    // highlighted command in the slash menu
+	verb          string             // word on the activity line, one per turn
+	turnTokens    int                // tokens streamed this turn
+	running       string             // tool running now
+	draft         string             // the tool call the model is writing now (raw text)
+	typeSeq       int                // bumped on every input change
+	prefilled     string             // text last sent for type-ahead
+	prefillCancel context.CancelFunc // stops the type-ahead request in flight
+	expand        bool               // ctrl+o: show tool output in full
+	showKeys      bool               // "?" shortcuts panel
+	confirmSel    int                // highlighted choice in the permission prompt
+	slashSel      int                // highlighted command in the slash menu
 }
 
 var debugLog *os.File
@@ -84,6 +87,9 @@ type serversMsg []*llm.Server
 type statsMsg struct{ st *llm.QuarryStats }
 
 type statsTick struct{}
+
+// typed: the input stopped changing (type-ahead check); seq tells stale ticks apart
+type typedTick struct{ seq int }
 
 // New makes the interface for an agent.
 func New(a *agent.Agent, cfg *config.Config) tea.Model {
@@ -272,6 +278,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tea.Batch(m.statsCmd(), tea.Tick(2*time.Second, func(time.Time) tea.Msg { return statsTick{} }))
+
+	case typedTick:
+		m.typeAhead(msg.seq)
+		return m, nil
 
 	case agent.AssistantStart:
 		m.draft = ""

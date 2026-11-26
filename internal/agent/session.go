@@ -3,6 +3,7 @@ package agent
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/randomdevtom/openllinuxm/internal/llm"
+	"github.com/randomdevtom/openllinuxm/internal/tools"
 )
 
 // Sessions: every conversation is saved after each step to
@@ -182,4 +184,22 @@ func ImportLog(logPath string, since time.Time) (string, int, error) {
 		return "", 0, err
 	}
 	return a.sessionPath, len(msgs) - 1, nil
+}
+
+// Prefill lets the server read the conversation plus the message being typed, so that sending
+// it later only has the last few words left to read. Only for Quarry; call it while no turn runs.
+func (a *Agent) Prefill(ctx context.Context, typed string) {
+	if a.Srv == nil || a.Srv.Kind != "quarry" {
+		return
+	}
+	user := typed
+	if len(a.msgs) == 1 {
+		user = "[working directory: " + a.Dir + "]\n" + user
+	}
+	msgs := append(append([]llm.Message(nil), a.msgs...), llm.Message{Role: "user", Content: user})
+	var defs []any
+	if !a.textTools {
+		defs = tools.Defs()
+	}
+	_ = a.Srv.Prefill(ctx, a.Model, msgs, defs, a.Think)
 }
