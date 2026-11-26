@@ -1,4 +1,4 @@
-VERSION ?= 0.3.1
+VERSION ?= 0.3.2
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
 openllinuxm: $(shell find cmd internal -name "*.go") go.mod

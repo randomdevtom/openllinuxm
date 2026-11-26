@@ -30,7 +30,8 @@ A terminal coding assistant for **local** models. One static binary, no Python, 
 - **Quarry support**: shows the GGUF it serves, context used, expert-cache hit rate and
   tok/s live in the status bar; Esc cancels the generation on the server too.
 - **Native tool calling** (`read_file`, `write_file`, `append_file`, `edit_file`,
-  `list_files`, `delete_file`, `run`), with a text fallback for models that have none.
+  `list_files`, `delete_file`, `run`, `web_search`, `web_fetch`), with a text fallback
+  for models that have none. Web search uses DuckDuckGo's HTML page: no API key.
   Edits show as diffs, file writes as previews, command output folded (Ctrl+O expands).
 - **Compact prompt**: about 60 words of system prompt plus short tool schemas, so a cold
   start on a CPU model takes seconds, not minutes.

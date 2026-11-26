@@ -34,6 +34,9 @@ func Defs() []any {
 			map[string]any{"path": desc("file path"), "old": desc("exact text to replace"), "new": desc("replacement")}, "path", "old", "new"),
 		fn("list_files", "List a directory.", map[string]any{"path": desc("directory, default .")}),
 		fn("delete_file", "Delete a file (the user confirms).", map[string]any{"path": desc("file path")}, "path"),
+		fn("web_search", "Search the web; returns titles, URLs and snippets.",
+			map[string]any{"query": desc("search terms")}, "query"),
+		fn("web_fetch", "Fetch a web page as plain text.", map[string]any{"url": desc("page URL")}, "url"),
 		fn("run", "Run a shell command; returns exit code and output.",
 			map[string]any{"command": desc("bash command"), "timeout": map[string]any{"type": "integer", "description": "seconds, default 120"}}, "command"),
 	}
@@ -41,7 +44,7 @@ func Defs() []any {
 
 // fallback for servers without tool calling: the same tools as a fenced JSON block
 const TextPrompt = "\nTo use a tool, reply with ONLY:\n```tool\n{\"tool\":\"NAME\",...args}\n```\n" +
-	"Tools: read_file{path} write_file{path,content} append_file{path,content} edit_file{path,old,new} list_files{path} delete_file{path} run{command,timeout}. " +
+	"Tools: read_file{path} write_file{path,content} append_file{path,content} edit_file{path,old,new} list_files{path} delete_file{path} web_search{query} web_fetch{url} run{command,timeout}. " +
 	"One tool per reply; the result comes back as [tool_result]."
 
 var textRe = regexp.MustCompile("(?s)```tool\\s*\\n(.*?)\\n```")
@@ -224,6 +227,22 @@ func Run(ctx context.Context, dir, name string, args map[string]any) (string, bo
 			res = "(no output)"
 		}
 		return fmt.Sprintf("exit %d\n%s", code, clip(res)), code == 0
+	case "web_search":
+		q := Str(args["query"])
+		if q == "" {
+			return "error: query is empty", false
+		}
+		out, err := webSearch(ctx, q, 8)
+		if err != nil {
+			return fail(err)
+		}
+		return clip(out), true
+	case "web_fetch":
+		out, err := webFetch(ctx, Str(args["url"]))
+		if err != nil {
+			return fail(err)
+		}
+		return clip(out), true
 	}
 	return fmt.Sprintf("error: unknown tool %q", name), false
 }

@@ -338,7 +338,7 @@ func (m *model) submit(text string) tea.Cmd {
 			m.info(fmt.Sprintf("run commands without asking: %v (deletes and risky commands always ask)", m.agent.Yolo))
 			return nil
 		case "/tools":
-			m.info("read_file · write_file · append_file · edit_file · list_files · delete_file (asks) · run (asks unless /yolo)")
+			m.info("read_file · write_file · append_file · edit_file · list_files · delete_file (asks) · web_search · web_fetch · run (asks unless yolo)")
 			return nil
 		case "/cd":
 			if arg != "" {

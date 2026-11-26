@@ -62,6 +62,7 @@ func (iw *incWrap) get(s string, w int) string {
 var toolTitles = map[string]string{
 	"run": "Bash", "read_file": "Read", "write_file": "Write", "append_file": "Append",
 	"edit_file": "Update", "list_files": "List", "delete_file": "Delete",
+	"web_search": "Search", "web_fetch": "Fetch",
 }
 
 func toolTitle(name string) string {
@@ -238,6 +239,14 @@ func (m *model) renderTool(b *block, w int) string {
 			plural(lineCount(nw), "addition"), plural(lineCount(old), "removal")))}, diff(old, nw, limit*3, w-8)...)
 	case "delete_file":
 		body = []string{sDim.Render("Deleted " + tools.Str(b.args["path"]))}
+	case "web_search":
+		n := strings.Count(res, "\n   http")
+		if res == "no results" {
+			n = 0
+		}
+		body = append([]string{sDim.Render(fmt.Sprintf("%d results", n))}, searchTitles(res, limit, w-8)...)
+	case "web_fetch":
+		body = []string{sDim.Render(fmt.Sprintf("Fetched %s of text", kfmt(len(res))+" chars"))}
 	case "run":
 		code, out := "0", res
 		if strings.HasPrefix(res, "exit ") {
@@ -402,4 +411,19 @@ func indent(s, first, rest string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// searchTitles: the numbered title lines of a web_search result
+func searchTitles(res string, n, w int) []string {
+	var out []string
+	for _, l := range strings.Split(res, "\n") {
+		if len(l) > 2 && l[0] >= '1' && l[0] <= '9' && strings.Contains(l[:3], ".") {
+			if len(out) == n {
+				out = append(out, sFaint.Render("… (ctrl+o to expand)"))
+				break
+			}
+			out = append(out, sDim.Render(truncate(l, w)))
+		}
+	}
+	return out
 }

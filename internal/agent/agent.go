@@ -109,6 +109,10 @@ func (a *Agent) callSummary(name string, args map[string]any) string {
 	switch name {
 	case "run":
 		return tools.Str(args["command"])
+	case "web_search":
+		return tools.Str(args["query"])
+	case "web_fetch":
+		return tools.Str(args["url"])
 	case "edit_file":
 		return fmt.Sprintf("%s  (-%d +%d lines)", path, strings.Count(tools.Str(args["old"]), "\n")+1, strings.Count(tools.Str(args["new"]), "\n")+1)
 	case "write_file":
