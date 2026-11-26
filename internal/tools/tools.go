@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -210,7 +212,22 @@ func Run(ctx context.Context, dir, name string, args map[string]any) (string, bo
 		defer cancel()
 		cmd := exec.CommandContext(cctx, "bash", "-c", Str(args["command"]))
 		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
+		// Output goes to a file, not a pipe: a command that starts something in the
+		// background ("python3 -m http.server &") leaves that process holding the pipe,
+		// and waiting for the pipe to close would hang forever. With a file, Wait
+		// returns when bash exits and the background process keeps running.
+		f, ferr := os.CreateTemp("", "openllinuxm-run-*")
+		if ferr != nil {
+			return fail(ferr)
+		}
+		os.Remove(f.Name()) // the open handle is enough
+		defer f.Close()
+		cmd.Stdout, cmd.Stderr = f, f
+		// Own process group, so a timeout or Esc stops everything the command started.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+		err := cmd.Run()
+		out, _ := os.ReadFile("/proc/self/fd/" + strconv.Itoa(int(f.Fd())))
 		code := 0
 		if err != nil {
 			if ee, ok := err.(*exec.ExitError); ok {
