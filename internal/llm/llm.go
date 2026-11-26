@@ -184,6 +184,9 @@ type Message struct {
 // StreamEvent is one piece of a streamed reply.
 type StreamEvent struct {
 	Text, Reasoning string
+	// a piece of a tool call while it is being written (progress only: the call itself is in
+	// ChatResult.ToolCalls)
+	Tool string
 }
 
 type ChatResult struct {
@@ -258,6 +261,7 @@ func (s *Server) Chat(ctx context.Context, model string, msgs []Message, tools [
 					Content          string `json:"content"`
 					ReasoningContent string `json:"reasoning_content"`
 					Reasoning        string `json:"reasoning"`
+					ToolCallText     string `json:"tool_call_text"` // Quarry: raw tool call so far
 					ToolCalls        []struct {
 						Index    *int   `json:"index"`
 						ID       string `json:"id"`
@@ -294,6 +298,9 @@ func (s *Server) Chat(ctx context.Context, model string, msgs []Message, tools [
 			res.Chunks++
 			on(StreamEvent{Text: d.Content})
 		}
+		if d.ToolCallText != "" {
+			on(StreamEvent{Tool: d.ToolCallText})
+		}
 		for _, tc := range d.ToolCalls {
 			i := len(res.ToolCalls)
 			if tc.Index != nil {
@@ -309,11 +316,11 @@ func (s *Server) Chat(ctx context.Context, model string, msgs []Message, tools [
 			c.Function.Name += tc.Function.Name
 			if a := tc.Function.Arguments; len(a) > 0 {
 				var str string
-				if json.Unmarshal(a, &str) == nil {
-					c.Function.Arguments += str
-				} else {
-					c.Function.Arguments += string(a) // some servers send the object itself
+				if json.Unmarshal(a, &str) != nil {
+					str = string(a) // some servers send the object itself
 				}
+				c.Function.Arguments += str
+				on(StreamEvent{Tool: str})
 			}
 		}
 		if fr := chunk.Choices[0].FinishReason; fr != nil {

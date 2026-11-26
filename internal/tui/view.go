@@ -57,6 +57,8 @@ func (m *model) activity() string {
 	switch {
 	case m.running != "":
 		parts = append(parts, "running "+m.running)
+	case m.draft != "":
+		parts = append(parts, draftLabel(m.draft))
 	case m.firstTok.IsZero():
 		parts = append(parts, "reading prompt")
 	default:
@@ -69,6 +71,27 @@ func (m *model) activity() string {
 	}
 	parts = append(parts, "esc to interrupt")
 	return " " + star + " " + shimmer(m.verb+"…", now) + sFaint.Render(" ("+strings.Join(parts, " · ")+")")
+}
+
+// draftLabel describes a tool call while the model writes it: "writing Write · 120 lines"
+func draftLabel(d string) string {
+	name := ""
+	if i := strings.Index(d, "<function="); i >= 0 { // Qwen XML calls
+		name = d[i+len("<function="):]
+		if j := strings.IndexAny(name, ">\n"); j >= 0 {
+			name = name[:j]
+		} else {
+			name = ""
+		}
+	}
+	s := "writing a tool call"
+	if name != "" {
+		s = "writing " + toolTitle(name)
+	}
+	if n := strings.Count(d, "\n"); n > 2 {
+		s += fmt.Sprintf(" · %d lines", n)
+	}
+	return s
 }
 
 // ---------------- input, menus, prompts ----------------

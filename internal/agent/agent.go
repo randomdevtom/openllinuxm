@@ -34,7 +34,7 @@ func systemPrompt(textTools bool) string {
 // Events sent from the agent goroutine to the UI (through Agent.Send).
 type (
 	AssistantStart struct{}
-	Delta          struct{ Text, Reasoning string }
+	Delta          struct{ Text, Reasoning, Tool string } // Tool: a tool call being written (progress)
 	AssistantDone  struct {
 		Content string
 		Chunks  int
@@ -72,6 +72,8 @@ type Agent struct {
 	textTools bool
 	msgs      []llm.Message
 	log       *os.File
+	// where the conversation is saved after every step
+	sessionPath string
 }
 
 func New(dir string) *Agent {
@@ -88,6 +90,7 @@ func New(dir string) *Agent {
 
 func (a *Agent) Reset() {
 	a.msgs = []llm.Message{{Role: "system", Content: systemPrompt(a.textTools)}}
+	a.sessionPath = newSessionPath()
 }
 
 func (a *Agent) logf(role, text string) {
@@ -152,6 +155,7 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 	}
 	a.msgs = append(a.msgs, llm.Message{Role: "user", Content: user})
 	a.logf("user", user)
+	defer a.Save()
 	limit, nudges := maxHops, 0
 	if goal {
 		limit = maxGoalHops
@@ -164,7 +168,7 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 			defs = tools.Defs()
 		}
 		res, err := a.Srv.Chat(ctx, a.Model, a.msgs, defs, a.Think, func(e llm.StreamEvent) {
-			a.Send(Delta{e.Text, e.Reasoning})
+			a.Send(Delta{e.Text, e.Reasoning, e.Tool})
 		})
 		if errors.Is(err, llm.ErrToolsUnsupported) {
 			a.textTools = true
@@ -259,6 +263,7 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 			} else {
 				a.msgs = append(a.msgs, llm.Message{Role: "tool", Content: out, ToolCallID: c.ID})
 			}
+			a.Save()
 			if ctx.Err() != nil {
 				a.Send(TurnDone{Cancelled: true})
 				return

@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +30,9 @@ func main() {
 	yolo := flag.Bool("yolo", false, "run shell commands without asking (deletes and risky commands still ask)")
 	list := flag.Bool("list", false, "list local servers and models, then exit")
 	showVer := flag.Bool("version", false, "print the version")
+	cont := flag.Bool("c", false, "continue the last session")
+	resume := flag.String("resume", "", "continue the session saved in this file")
+	importLog := flag.String("import-log", "", "rebuild a session from the log, from this time on (RFC3339), then continue it")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "openLLinuxM %s: a terminal coding assistant for local models\n\nusage: openllinuxm [flags]\n\n", version)
 		flag.PrintDefaults()
@@ -69,6 +73,35 @@ func main() {
 	}
 	a := agent.New(wd)
 	a.Think, a.Yolo = cfg.Think, *yolo
+	if *importLog != "" {
+		since, err := time.Parse(time.RFC3339, *importLog)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error: -import-log wants a time like 2026-11-26T17:01:41Z:", err)
+			os.Exit(2)
+		}
+		home, _ := os.UserHomeDir()
+		path, n, err := agent.ImportLog(filepath.Join(home, ".local", "state", "openllinuxm", "log.txt"), since)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "imported %d messages into %s\n", n, path)
+		*resume = path
+	}
+	if *cont && *resume == "" {
+		p, err := agent.LatestSession()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		*resume = p
+	}
+	if *resume != "" {
+		if err := a.Load(*resume); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+	}
 	// set colors from the environment: querying the terminal blocks startup and eats typed keys
 	lipgloss.SetColorProfile(termenv.EnvColorProfile())
 	lipgloss.SetHasDarkBackground(true)

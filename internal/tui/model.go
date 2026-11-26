@@ -3,6 +3,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -63,6 +64,7 @@ type model struct {
 	verb       string // word on the activity line, one per turn
 	turnTokens int    // tokens streamed this turn
 	running    string // tool running now
+	draft      string // the tool call the model is writing now (raw text)
 	expand     bool   // ctrl+o: show tool output in full
 	showKeys   bool   // "?" shortcuts panel
 	confirmSel int    // highlighted choice in the permission prompt
@@ -98,7 +100,61 @@ func New(a *agent.Agent, cfg *config.Config) tea.Model {
 	ta.Focus()
 	sp := spinner.New(spinner.WithSpinner(spinner.Spinner{Frames: []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}, FPS: time.Second / 12}))
 	sp.Style = lipgloss.NewStyle().Foreground(cAccent)
-	return &model{agent: a, cfg: cfg, ta: ta, spin: sp, vp: viewport.New(80, 20), showThink: cfg.ShowThinking}
+	m := &model{agent: a, cfg: cfg, ta: ta, spin: sp, vp: viewport.New(80, 20), showThink: cfg.ShowThinking}
+	m.replay()
+	return m
+}
+
+// replay draws a continued session's history as transcript blocks.
+func (m *model) replay() {
+	msgs := m.agent.Messages()
+	if len(msgs) <= 1 {
+		return
+	}
+	var pending *block // last tool block still waiting for its result
+	for _, msg := range msgs[1:] {
+		switch msg.Role {
+		case "user":
+			if strings.HasPrefix(msg.Content, "[tool_result] ") && pending != nil {
+				pending.result, pending.ok, pending.done = strings.TrimPrefix(msg.Content, "[tool_result] "), true, true
+				pending = nil
+				continue
+			}
+			t := msg.Content
+			if strings.HasPrefix(t, "[working directory: ") {
+				if _, rest, ok := strings.Cut(t, "]\n"); ok {
+					t = rest
+				}
+			}
+			if strings.HasPrefix(t, "GOAL: ") {
+				t = "/goal " + strings.SplitN(strings.TrimPrefix(t, "GOAL: "), "\nWork autonomously", 2)[0]
+			}
+			m.add(&block{kind: kUser, text: t, done: true})
+		case "assistant":
+			if msg.Content != "" || msg.Reasoning != "" {
+				m.add(&block{kind: kAssistant, text: msg.Content, reasoning: msg.Reasoning, done: true})
+			}
+			for _, c := range msg.ToolCalls {
+				var args map[string]any
+				_ = json.Unmarshal([]byte(c.Function.Arguments), &args)
+				if args == nil {
+					args = map[string]any{}
+				}
+				pending = m.add(&block{kind: kTool, name: c.Function.Name, summary: m.agent.CallSummary(c.Function.Name, args), args: args})
+			}
+		case "tool":
+			if pending != nil {
+				out := msg.Content
+				failed := strings.HasPrefix(out, "error") || (strings.HasPrefix(out, "exit ") && !strings.HasPrefix(out, "exit 0\n") && out != "exit 0")
+				pending.result, pending.ok, pending.done = out, !failed, true
+				pending = nil
+			}
+		}
+	}
+	for _, b := range m.blocks {
+		b.done = true
+	}
+	m.add(&block{kind: kInfo, text: fmt.Sprintf("continued session · %d messages", len(msgs)-1), done: true})
 }
 
 func (m *model) Init() tea.Cmd {
@@ -218,6 +274,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.statsCmd(), tea.Tick(2*time.Second, func(time.Time) tea.Msg { return statsTick{} }))
 
 	case agent.AssistantStart:
+		m.draft = ""
 		m.add(&block{kind: kAssistant})
 		m.refresh(true)
 		return m, nil
@@ -232,6 +289,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.chunks++
 		m.turnTokens++
+		if msg.Tool != "" {
+			m.draft += msg.Tool
+			return m, nil
+		}
 		if msg.Reasoning != "" {
 			if b.thinkStart.IsZero() {
 				b.thinkStart = time.Now()
@@ -264,6 +325,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case agent.ToolStart:
+		m.draft = ""
 		m.add(&block{kind: kTool, name: msg.Name, summary: msg.Summary, args: msg.Args})
 		m.running = toolTitle(msg.Name)
 		m.refresh(true)
