@@ -13,24 +13,24 @@ import (
 // ---------------- welcome ----------------
 
 func (m *model) welcome() string {
-	w := min(max(40, m.w-4), 72)
-	body := lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.NewStyle().Foreground(cThink).Render("✻ ")+"Welcome to "+gradient("openLLinuxM", true)+"!",
+	tux := []string{"    .--.    ", "   |o_o |   ", "   |:_/ |   ", "  //   \\ \\  ", " (|     | ) ", "/'\\_   _/`\\", "\\___)=(___/ "}
+	var art []string
+	for i, l := range tux {
+		art = append(art, lipgloss.NewStyle().Foreground(lipgloss.Color(palette[i%len(palette)])).Render(l))
+	}
+	w := min(max(30, m.w-24), 60)
+	info := lipgloss.JoinVertical(lipgloss.Left,
+		gradient("openLLinuxM", true)+sDim.Render("  v"+Version),
+		sDim.Render("local AI · Linux soul"),
 		"",
-		sDim.Render("  /help for help, /model to switch models"),
+		sDim.Render("cwd   ")+sText.Render(truncate(agent.Tildify(m.agent.Dir), w-6)),
+		sDim.Render("model ")+m.modelLabel(),
 		"",
-		sDim.Render("  cwd:   ")+sText.Render(truncate(agent.Tildify(m.agent.Dir), w-14)),
-		sDim.Render("  model: ")+m.modelLabel(),
+		sFaint.Render("/ commands · ? shortcuts · /goal <task> to run until done"),
 	)
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cThink).Padding(0, 1).Width(w).Render(body)
-	tips := lipgloss.JoinVertical(lipgloss.Left,
-		sDim.Render(" Tips for getting started:"),
-		"",
-		sDim.Render(" 1. Ask for a change, a fix or a whole program: it reads, edits and runs things itself"),
-		sDim.Render(" 2. /goal <task> keeps working until the task is done"),
-		sDim.Render(" 3. Shift+Tab lets it run commands without asking; deletes always ask"),
-	)
-	return box + "\n\n" + tips
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cBrand2).Padding(0, 2).
+		Render(lipgloss.JoinHorizontal(lipgloss.Center, strings.Join(art, "\n"), "   ", info))
+	return box
 }
 
 func (m *model) modelLabel() string {
@@ -52,7 +52,7 @@ func (m *model) activity() string {
 		return ""
 	}
 	now := time.Now()
-	star := lipgloss.NewStyle().Foreground(cThink).Render(starFrames[int(now.UnixMilli()/120)%len(starFrames)])
+	star := lipgloss.NewStyle().Foreground(cBrand).Render(starFrames[int(now.UnixMilli()/150)%len(starFrames)])
 	parts := []string{fmt.Sprintf("%ds", int(time.Since(m.turnStart).Seconds()))}
 	switch {
 	case m.running != "":
@@ -79,9 +79,9 @@ func (m *model) input() string {
 	}
 	border := cFaint
 	if !m.busy {
-		border = cDim
+		border = cAccent
 	}
-	prompt := sText.Render("> ")
+	prompt := lipgloss.NewStyle().Foreground(cUser).Bold(true).Render("❯ ")
 	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Width(m.w - 2).
 		Render(lipgloss.JoinHorizontal(lipgloss.Top, prompt, m.ta.View()))
 }
@@ -98,11 +98,11 @@ func (m *model) confirmBox() string {
 	if strings.HasPrefix(c.Prompt, "run a risky command") {
 		title = "Risky command"
 	}
-	opts := []string{"Yes", "Yes, and don't ask again this session", "No, and tell openLLinuxM what to do differently (esc)"}
+	opts := []string{"Yes", "Yes, and stop asking (yolo for this session)", "No, stop and let me say what to do (esc)"}
 	if c.Tool == "delete_file" || strings.HasPrefix(c.Prompt, "run a risky command") {
-		opts = []string{"Yes", "No, and tell openLLinuxM what to do differently (esc)"}
+		opts = []string{"Yes", "No, stop and let me say what to do (esc)"}
 	}
-	rows := []string{sBoldText.Render(title), "", "  " + sText.Render(wrap(c.Detail, m.w-10)), "", sText.Render("Do you want to proceed?")}
+	rows := []string{sWarnText.Bold(true).Render("⚠ " + title), "", "  " + sText.Render(wrap(c.Detail, m.w-10)), "", sText.Render("Allow it?")}
 	for i, o := range opts {
 		line := fmt.Sprintf("  %d. %s", i+1, o)
 		if i == m.confirmSel {
@@ -135,7 +135,7 @@ func (m *model) slashMenu() string {
 func (m *model) shortcuts() string {
 	col := func(k, d string) string { return sText.Render(fmt.Sprintf("%-12s", k)) + sDim.Render(d) }
 	left := []string{col("/", "commands"), col("enter", "send"), col("alt+enter", "newline"), col("↑ ↓", "history")}
-	right := []string{col("esc", "interrupt · clear input"), col("shift+tab", "auto-accept commands"), col("ctrl+t", "show thinking"), col("ctrl+o", "expand tool output")}
+	right := []string{col("esc", "interrupt · clear input"), col("shift+tab", "yolo on/off"), col("ctrl+t", "show thinking"), col("ctrl+o", "expand tool output")}
 	var rows []string
 	for i := range left {
 		rows = append(rows, "  "+left[i]+"    "+right[i])
@@ -149,15 +149,15 @@ func (m *model) footer() string {
 	case m.quitArmed:
 		left = sDim.Render("  Press Ctrl-C again to exit")
 	case m.agent.Yolo:
-		left = sWarnText.Render("  ⏵⏵ auto-accept commands on") + sFaint.Render(" (shift+tab to cycle)")
+		left = sWarnText.Render("  ⚡ yolo: commands run without asking") + sFaint.Render(" (shift+tab)")
 	default:
-		left = sFaint.Render("  ? for shortcuts")
+		left = "  " + gradient("◆ openLLinuxM", false) + sFaint.Render("  ? shortcuts")
 	}
 	var parts []string
 	if m.agent.Srv != nil {
 		parts = append(parts, m.modelLabel())
 		if m.agent.Think {
-			parts = append(parts, lipgloss.NewStyle().Foreground(cThink).Render("thinking on"))
+			parts = append(parts, lipgloss.NewStyle().Foreground(cBrand2).Render("think on"))
 		}
 	}
 	if st := m.stats; st != nil && m.agent.Srv != nil && m.agent.Srv.Kind == "quarry" {
@@ -211,7 +211,7 @@ func (m *model) bottomHeight() int {
 func (m *model) picker() string {
 	items := m.filtered()
 	var rows []string
-	rows = append(rows, sBoldText.Render("Select model"), sDim.Render("Local servers found on this machine"), "")
+	rows = append(rows, gradient("◆ Choose a model", true), sDim.Render("local servers on this machine"), "")
 	if m.pickFilter != "" {
 		rows = append(rows, sDim.Render("filter: ")+sText.Render(m.pickFilter), "")
 	}
@@ -248,7 +248,7 @@ func (m *model) View() string {
 	switch m.mode {
 	case modeDiscover:
 		return lipgloss.Place(m.w, m.h, lipgloss.Center, lipgloss.Center,
-			lipgloss.NewStyle().Foreground(cThink).Render(starFrames[int(time.Now().UnixMilli()/120)%len(starFrames)])+" "+shimmer("Looking for local models…", time.Now()))
+			lipgloss.NewStyle().Foreground(cBrand).Render(starFrames[int(time.Now().UnixMilli()/150)%len(starFrames)])+" "+shimmer("Looking for local models…", time.Now()))
 	case modePick:
 		return lipgloss.Place(m.w, m.h, lipgloss.Center, lipgloss.Center, m.picker())
 	}

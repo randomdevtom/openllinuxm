@@ -86,7 +86,7 @@ type statsTick struct{}
 // New makes the interface for an agent.
 func New(a *agent.Agent, cfg *config.Config) tea.Model {
 	ta := textarea.New()
-	ta.Placeholder = `Try "build a snake game in snake.html" · / for commands`
+	ta.Placeholder = "Ask anything · / for commands"
 	ta.ShowLineNumbers = false
 	ta.Prompt = ""
 	ta.CharLimit = 0
@@ -296,7 +296,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch {
 		case msg.Cancelled:
-			m.info("Interrupted · tell it what to do instead")
+			m.info("Interrupted · what should it do instead?")
 		case msg.Err != nil:
 			m.fail(msg.Err.Error())
 		}

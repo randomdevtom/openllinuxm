@@ -72,8 +72,8 @@ func toolTitle(name string) string {
 }
 
 const (
-	bullet = "⏺ "
-	elbow  = "  ⎿  "
+	bullet = "◆ "
+	elbow  = "  └─ "
 	inset  = "     " // continuation lines under the elbow
 )
 
@@ -93,7 +93,7 @@ func (m *model) render(b *block) string {
 		for i, l := range lines {
 			p := "  "
 			if i == 0 {
-				p = "> "
+				p = "❯ "
 			}
 			lines[i] = p + l
 		}
@@ -120,7 +120,7 @@ func (m *model) render(b *block) string {
 				n := strings.Count(t[i:], "\n") + 1
 				t = strings.TrimSpace(t[:i])
 				if t != "" {
-					out = append(out, withBullet(sText.Render(wrap(t, w-2)), sText))
+					out = append(out, withBullet(sText.Render(wrap(t, w-2)), sBrandText))
 				}
 				if b.done {
 					out = append(out, sWarnText.Render(fmt.Sprintf("%sunfinished tool call (%d lines), not run", bullet, n)))
@@ -132,9 +132,9 @@ func (m *model) render(b *block) string {
 				if err != nil {
 					r = wrap(t, w-2)
 				}
-				out = append(out, withBullet(strings.Trim(r, "\n"), sText))
+				out = append(out, withBullet(strings.Trim(r, "\n"), sBrandText))
 			} else {
-				out = append(out, withBullet(sText.Render(b.tw.get(t+" ▍", w-2)), sText))
+				out = append(out, withBullet(sText.Render(b.tw.get(t+" ▍", w-2)), sBrandText))
 			}
 		}
 		return strings.Join(out, "\n")
@@ -194,16 +194,12 @@ func stripANSI(s string) string {
 
 func (m *model) renderTool(b *block, w int) string {
 	// ⏺ Bash(ls -la)
-	dot := sOKText.Render(bullet)
+	dot := sOKText.Render(toolMark)
 	switch {
 	case !b.done:
-		if time.Now().UnixMilli()/500%2 == 0 {
-			dot = sDim.Render(bullet)
-		} else {
-			dot = sText.Render(bullet)
-		}
+		dot = lipgloss.NewStyle().Foreground(cBrand).Render(starFrames[int(time.Now().UnixMilli()/150)%len(starFrames)] + " ")
 	case !b.ok:
-		dot = sErrText.Render(bullet)
+		dot = sErrText.Render(toolMark)
 	}
 	arg := b.summary
 	if b.name == "edit_file" || b.name == "write_file" {
@@ -356,38 +352,39 @@ func (m *model) fail(s string) { m.add(&block{kind: kError, text: s, done: true}
 
 // ---------------- the live line above the input ----------------
 
-// verbs for the activity line, one per turn
-var thinkVerbs = []string{"Thinking", "Pondering", "Mulling", "Cogitating", "Noodling", "Ruminating",
-	"Deliberating", "Musing", "Scheming", "Percolating", "Brewing", "Untangling", "Reckoning", "Tinkering",
-	"Conjuring", "Simmering", "Hatching", "Puzzling"}
+// verbs for the activity line, one per turn: a terminal's worth of them
+var thinkVerbs = []string{"Grepping", "Compiling", "Piping", "Forking", "Mounting", "Recompiling",
+	"Bootstrapping", "Linking", "Hacking", "Tinkering", "Daemonizing", "Untarring", "Rebasing", "Sudoing",
+	"Chmodding", "Kerneling", "Tux-thinking", "Patching", "Bisecting", "Defragging"}
 
-var starFrames = []string{"·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"}
+// the live diamond: hollow, dotted, full and back
+var starFrames = []string{"◇", "◈", "◆", "◈"}
+
+const toolMark = "▸ "
 
 // thoughtLine: the folded thinking once it is over
 func thoughtLine(dur time.Duration, hint string) string {
-	s := sDim.Render(fmt.Sprintf("✻ Thought for %ds", int(dur.Seconds()+0.5)))
+	s := sDim.Render(fmt.Sprintf("◇ Thought for %ds", int(dur.Seconds()+0.5)))
 	if hint != "" {
 		s += sFaint.Render(" (" + hint + ")")
 	}
 	return s
 }
 
-// shimmer colours a word with a bright band sweeping across it
+// shimmer paints a word in the openLLinuxM gradient, moving across it, with a bright band
 func shimmer(word string, now time.Time) string {
 	rs := []rune(word)
-	pos := float64(now.UnixMilli()%1600)/1600*float64(len(rs)+8) - 4
+	t := float64(now.UnixMilli()%2000) / 2000
+	pos := t*float64(len(rs)+8) - 4
 	var sb strings.Builder
 	for i, r := range rs {
 		d := float64(i) - pos
 		if d < 0 {
 			d = -d
 		}
-		c := cThink
-		switch {
-		case d < 1:
-			c = cThinkHi
-		case d < 2.5:
-			c = cThinkMid
+		c := lipgloss.Color(palette[(i+int(t*float64(len(palette)*2)))%len(palette)])
+		if d < 1.2 {
+			c = lipgloss.Color("#ffffff")
 		}
 		sb.WriteString(lipgloss.NewStyle().Foreground(c).Render(string(r)))
 	}

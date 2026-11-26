@@ -72,6 +72,7 @@ func main() {
 	// set colors from the environment: querying the terminal blocks startup and eats typed keys
 	lipgloss.SetColorProfile(termenv.EnvColorProfile())
 	lipgloss.SetHasDarkBackground(true)
+	tui.Version = version
 	m := tui.New(a, cfg)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	a.Send = func(v any) { p.Send(v) }

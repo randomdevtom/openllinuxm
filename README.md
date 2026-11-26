@@ -3,29 +3,24 @@
 A terminal coding assistant for **local** models. One static binary, no Python, no cloud.
 
 ```
-> make a hello script
-
-✻ Thought for 3s (ctrl+t to show)
-
-⏺ Write(hello.py)
-  ⎿  Wrote 9 lines to hello.py
+❯ make a hello script
+◇ Thought for 3s (ctrl+t to show)
+▸ Write(hello.py)
+  └─ Wrote 8 lines to hello.py
         1 import sys
         2
         3 def main():
-     … +6 lines (ctrl+o to expand)
-
-⏺ Update(hello.py)
-  ⎿  Updated hello.py with 1 addition and 1 removal
+     … +5 lines (ctrl+o to expand)
+▸ Update(hello.py)
+  └─ Updated hello.py with 1 addition and 1 removal
      -     print('Hello, ' + name)
      +     print(f'Hello, {name}!')
-
-⏺ Done. Run it with python3 hello.py Tom.
-
- ✻ Tinkering… (14s · ↓ 312 tokens · esc to interrupt)
+◆ Done. Run it with python3 hello.py Tom.
+ ◈ Compiling… (14s · ↓ 312 tokens · esc to interrupt)
 ╭──────────────────────────────────────────────────────────────────────────────╮
-│> Try "build a snake game in snake.html" · / for commands                     │
+│❯ Ask anything · / for commands                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  ? for shortcuts                    Logics-SWE @ Quarry · thinking on · cache 91%
+  ◆ openLLinuxM  ? shortcuts           Logics-SWE @ Quarry · think on · cache 91%
 ```
 
 ## Features
@@ -45,7 +40,7 @@ A terminal coding assistant for **local** models. One static binary, no Python, 
   (Quarry, llama.cpp) don't read the conversation again on every step.
 - `/goal <task>`: keeps working with the tools until the task is done.
 - Shell commands ask first (1 yes / 2 yes, don't ask again / 3 no). Shift+Tab turns
-  auto-accept on. Deletes and risky commands always ask.
+  yolo mode on. Deletes and risky commands always ask.
 
 ## Install
 
@@ -69,7 +64,7 @@ openllinuxm --yolo              # run commands without asking (deletes still ask
 |---|---|
 | Enter / Alt+Enter | send / new line |
 | Esc | stop the current reply, or clear the input |
-| Shift+Tab | auto-accept commands on or off |
+| Shift+Tab | yolo mode (run commands without asking) on or off |
 | Ctrl+T | show or hide thinking |
 | Ctrl+O | expand or fold tool output |
 | `?` | shortcuts |
