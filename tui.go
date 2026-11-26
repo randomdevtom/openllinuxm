@@ -74,6 +74,28 @@ type block struct {
 	cacheW            int
 	cacheThink, dirty bool
 	at                time.Time
+	tw, rw            incWrap // streaming text and reasoning, wrapped as they arrive
+}
+
+// incWrap wraps a growing text: finished lines are wrapped once and kept, so each frame
+// only wraps the new part (wrapping the whole reply every frame froze the UI on long replies).
+type incWrap struct {
+	w    int
+	used int // bytes of the source already wrapped (up to a newline)
+	out  []string
+}
+
+func (iw *incWrap) get(s string, w int) string {
+	if iw.w != w || iw.used > len(s) {
+		*iw = incWrap{w: w}
+	}
+	if i := strings.LastIndexByte(s, '\n'); i >= iw.used {
+		for _, l := range strings.Split(s[iw.used:i], "\n") {
+			iw.out = append(iw.out, wrap(l, w))
+		}
+		iw.used = i + 1
+	}
+	return strings.Join(append(iw.out[:len(iw.out):len(iw.out)], wrap(s[iw.used:], w)), "\n")
 }
 
 // ---------------- model ----------------
@@ -281,8 +303,11 @@ func (m *model) render(b *block) string {
 			r := strings.TrimSpace(b.reasoning)
 			switch {
 			case m.showThink:
-				out = append(out, head, sThink.Render(wrap(r, w)))
+				out = append(out, head, sThink.Render(b.rw.get(r, w)))
 			case b.text == "" && !b.done:
+				if len(r) > 1500 {
+					r = r[len(r)-1500:]
+				}
 				lines := strings.Split(wrap(r, w), "\n")
 				if len(lines) > 3 {
 					lines = lines[len(lines)-3:]
@@ -313,7 +338,7 @@ func (m *model) render(b *block) string {
 					out = append(out, wrap(t, w))
 				}
 			} else {
-				out = append(out, lipgloss.NewStyle().Foreground(cText).Render(wrap(t+" ▍", w)))
+				out = append(out, lipgloss.NewStyle().Foreground(cText).Render(b.tw.get(t+" ▍", w)))
 			}
 		}
 		if len(out) == 0 {
@@ -453,8 +478,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			b.text += msg.text
 		}
-		m.refresh(false)
-		return m, nil
+		return m, nil // redrawn by the spinner tick, at most 12 times a second
 
 	case evAssistantDone:
 		if b := m.last(kAssistant); b != nil {
