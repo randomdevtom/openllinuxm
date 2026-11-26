@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -25,8 +26,9 @@ func systemPrompt(textTools bool) string {
 	p := "You are openLLinuxM, a coding assistant in the user's Linux terminal. " +
 		"Use the tools to inspect, edit and run things; paths are relative to the working directory. " +
 		"Prefer edit_file to rewriting files. " +
-		"When the user asks you to do something that a tool or a terminal command can do, do it yourself with the tools; " +
-		"never tell the user to run a command themselves. Only ask first for actions that are destructive or need their password. " +
+		"You are an agent, not a chatbot: when the user asks for something, do it right away with the tools and keep going until it is done. " +
+		"Never tell the user to run a command or make a change themselves, never list steps for them, never ask \"shall I?\" or \"would you like me to\": just do it. " +
+		"Only ask first for destructive actions or ones that need their password. Show what you did and the result, not a plan. " +
 		"Be brief. Answer in Markdown."
 	if textTools {
 		p += tools.TextPrompt
@@ -159,7 +161,7 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 	a.msgs = append(a.msgs, llm.Message{Role: "user", Content: user})
 	a.logf("user", user)
 	defer a.Save()
-	limit, nudges := maxHops, 0
+	limit, nudges, pushed := maxHops, 0, false
 	if goal {
 		limit = maxGoalHops
 	}
@@ -214,6 +216,16 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 		}
 		if len(calls) == 0 {
 			a.msgs = append(a.msgs, llm.Message{Role: "assistant", Content: content, Reasoning: res.Reasoning})
+			// small models slip into chatbot mode: commands for the user to run, or "shall I?";
+			// push back once per message
+			if !goal && !pushed {
+				if nudge := chatbotNudge(content); nudge != "" {
+					pushed = true
+					a.Send(Info{"it suggested instead of doing: telling it to do it"})
+					a.msgs = append(a.msgs, llm.Message{Role: "user", Content: nudge})
+					continue
+				}
+			}
 			if goal && !strings.Contains(content, "GOAL_COMPLETED") && nudges < 3 {
 				nudges++
 				a.msgs = append(a.msgs, llm.Message{Role: "user", Content: "Not done yet? Continue with the next concrete step. If the goal is complete, reply GOAL_COMPLETED and a summary."})
@@ -275,4 +287,21 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 	}
 	a.Send(Info{fmt.Sprintf("stopped after %d steps (limit)", limit)})
 	a.Send(TurnDone{})
+}
+
+var (
+	askRe     = regexp.MustCompile(`(?i)\b(would you like me to|do you want me to|shall i|should i (go ahead|proceed)|want me to|let me know if you(?:'d| would) like)\b`)
+	suggestRe = regexp.MustCompile("(?i)(```(bash|sh|shell|console|zsh)\\b|\\byou (can|could|should|need to|will need to|'ll need to) (run|execute|install|open|edit|change|add)\\b|\\b(run|execute) (the following|this|these)\\b|\\btry running\\b)")
+)
+
+// chatbotNudge returns the message that pushes a reply without tool calls back to doing the
+// work, or "" when the reply looks like a real answer
+func chatbotNudge(reply string) string {
+	switch {
+	case askRe.MatchString(reply):
+		return "Yes, do it. Don't ask, just do it with the tools."
+	case suggestRe.MatchString(reply):
+		return "Don't tell me what to run or change: do it yourself now with the tools, then show me the result."
+	}
+	return ""
 }

@@ -52,3 +52,17 @@ second line
 		t.Fatalf("latest %q want %q", p, path)
 	}
 }
+
+func TestChatbotNudge(t *testing.T) {
+	for in, want := range map[string]bool{
+		"Run this:\n```bash\nnpm install\n```":            true,
+		"You can run `make` to build it.":                 true,
+		"Would you like me to fix the collision bug?":     true,
+		"Fixed: the loop now stops at the chunk edge.":    false,
+		"The sky is blue because of Rayleigh scattering.": false,
+	} {
+		if got := chatbotNudge(in) != ""; got != want {
+			t.Errorf("%q: nudge=%v, want %v", in, got, want)
+		}
+	}
+}
