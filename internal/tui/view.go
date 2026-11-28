@@ -275,5 +275,7 @@ func (m *model) View() string {
 	case modePick:
 		return lipgloss.Place(m.w, m.h, lipgloss.Center, lipgloss.Center, m.picker())
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, append([]string{m.vp.View()}, m.bottom()...)...)
+	// zero-width joiners and emoji selectors make the terminal draw some emoji 2 columns wide where
+	// the width library counts 1: a line then wraps on screen and the frame shifts and garbles
+	return stripZW(lipgloss.JoinVertical(lipgloss.Left, append([]string{m.vp.View()}, m.bottom()...)...))
 }

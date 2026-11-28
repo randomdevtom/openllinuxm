@@ -224,7 +224,12 @@ func Run(ctx context.Context, dir, name string, args map[string]any) (string, bo
 		defer f.Close()
 		cmd.Stdout, cmd.Stderr = f, f
 		// Own process group, so a timeout or Esc stops everything the command started.
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		// Its own session: no controlling terminal, so nothing it runs (sudo's password prompt,
+		// ssh, git credential prompts, pagers) can draw over the UI or eat keys through /dev/tty.
+		// A new session is also a new process group, so the kill below still reaches everything.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		cmd.Env = append(os.Environ(), "PAGER=cat", "GIT_PAGER=cat", "MANPAGER=cat", "SYSTEMD_PAGER=cat",
+			"GIT_TERMINAL_PROMPT=0", "NO_COLOR=1", "CLICOLOR=0")
 		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 		err := cmd.Run()
 		out, _ := os.ReadFile("/proc/self/fd/" + strconv.Itoa(int(f.Fd())))

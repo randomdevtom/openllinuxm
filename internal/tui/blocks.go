@@ -341,6 +341,17 @@ func diff(old, nw string, n, w int) []string {
 }
 
 func (m *model) add(b *block) *block {
+	b.text, b.reasoning, b.summary, b.result = clean(b.text), clean(b.reasoning), clean(b.summary), clean(b.result)
+	if len(b.args) > 0 { // a copy: the agent still uses its map
+		a := make(map[string]any, len(b.args))
+		for k, v := range b.args {
+			if s, ok := v.(string); ok {
+				v = clean(s)
+			}
+			a[k] = v
+		}
+		b.args = a
+	}
 	b.dirty, b.at = true, time.Now()
 	m.blocks = append(m.blocks, b)
 	return b

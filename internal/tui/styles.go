@@ -2,9 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
@@ -67,8 +69,63 @@ func truncate(s string, n int) string {
 	if n < 8 {
 		n = 8
 	}
-	if len([]rune(s)) > n {
-		return string([]rune(s)[:n-1]) + "…"
+	return ansi.Truncate(s, n, "…") // by screen columns: wide characters count 2
+}
+
+// escape sequences (colors, cursor moves, titles) in command output or model text
+var escRe = regexp.MustCompile(`\x1b\[[0-9;:?<=>]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[PX^_][^\x1b]*\x1b\\|\x1b[ -/]*[0-~]`)
+
+// clean makes text safe to draw: no escape sequences, "\r" overwrites resolved the way a terminal
+// shows them (progress bars keep their last state), no other control or zero-width characters.
+// Raw control characters move the cursor inside the UI's frame: text vanishes or garbles.
+func clean(s string) string {
+	if s == "" {
+		return s
+	}
+	if strings.IndexByte(s, 0x1b) >= 0 {
+		s = escRe.ReplaceAllString(s, "")
+	}
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	if strings.IndexByte(s, '\r') >= 0 {
+		lines := strings.Split(s, "\n")
+		for i, l := range lines {
+			if j := strings.LastIndexByte(strings.TrimRight(l, "\r"), '\r'); j >= 0 {
+				l = l[j+1:]
+			}
+			lines[i] = strings.TrimRight(l, "\r")
+		}
+		s = strings.Join(lines, "\n")
+	}
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\t':
+			return r
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0):
+			return -1
+		case zeroWidth(r):
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// zeroWidth: joiners, variation selectors and direction marks, which terminals and the width
+// library disagree about
+func zeroWidth(r rune) bool {
+	return r == 0x200b || r == 0x200c || r == 0x200d || r == 0x2060 || r == 0xfeff ||
+		r == 0xfe0e || r == 0xfe0f || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
+}
+
+func stripZW(s string) string {
+	for _, r := range s {
+		if zeroWidth(r) {
+			return strings.Map(func(r rune) rune {
+				if zeroWidth(r) {
+					return -1
+				}
+				return r
+			}, s)
+		}
 	}
 	return s
 }

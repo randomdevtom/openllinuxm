@@ -122,7 +122,7 @@ func (m *model) replay() {
 		switch msg.Role {
 		case "user":
 			if strings.HasPrefix(msg.Content, "[tool_result] ") && pending != nil {
-				pending.result, pending.ok, pending.done = strings.TrimPrefix(msg.Content, "[tool_result] "), true, true
+				pending.result, pending.ok, pending.done = clean(strings.TrimPrefix(msg.Content, "[tool_result] ")), true, true
 				pending = nil
 				continue
 			}
@@ -152,7 +152,7 @@ func (m *model) replay() {
 			if pending != nil {
 				out := msg.Content
 				failed := strings.HasPrefix(out, "error") || (strings.HasPrefix(out, "exit ") && !strings.HasPrefix(out, "exit 0\n") && out != "exit 0")
-				pending.result, pending.ok, pending.done = out, !failed, true
+				pending.result, pending.ok, pending.done = clean(out), !failed, true
 				pending = nil
 			}
 		}
@@ -307,13 +307,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if b.thinkStart.IsZero() {
 				b.thinkStart = time.Now()
 			}
-			b.reasoning += msg.Reasoning
+			b.reasoning += clean(msg.Reasoning)
 		}
 		if msg.Text != "" {
 			if b.thinkDur == 0 && !b.thinkStart.IsZero() {
 				b.thinkDur = time.Since(b.thinkStart)
 			}
-			b.text += msg.Text
+			b.text += clean(msg.Text)
 		}
 		return m, nil // redrawn by the spinner tick, at most 12 times a second
 
@@ -343,7 +343,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agent.ToolResult:
 		if b := m.last(kTool); b != nil {
-			b.result, b.ok, b.done, b.dirty = msg.Out, msg.OK, true, true
+			b.result, b.ok, b.done, b.dirty = clean(msg.Out), msg.OK, true, true
 		}
 		m.running = ""
 		m.refresh(false)
