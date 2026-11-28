@@ -78,6 +78,8 @@ type Agent struct {
 	log       *os.File
 	// where the conversation is saved after every step
 	sessionPath string
+	nCtx        int         // context size last reported by nCtxSrv
+	nCtxSrv     *llm.Server
 }
 
 func New(dir string) *Agent {

@@ -20,11 +20,17 @@ const (
 	keepTail    = 6    // the latest messages stay as they are
 )
 
-// contextTokens: the model's context size (Quarry reports it; others get a common default)
+// contextTokens: the model's context size (Quarry reports it; others get a common default).
+// The last size Quarry reported is kept: a busy server that does not answer in time must not
+// make it look small (that would compact far too early).
 func (a *Agent) contextTokens(ctx context.Context) int {
 	if a.Srv != nil && a.Srv.Kind == "quarry" {
 		if st, err := a.Srv.Stats(ctx); err == nil && st.NCtx > 0 {
+			a.nCtx, a.nCtxSrv = st.NCtx, a.Srv
 			return st.NCtx
+		}
+		if a.nCtxSrv == a.Srv && a.nCtx > 0 {
+			return a.nCtx
 		}
 	}
 	return 32768
