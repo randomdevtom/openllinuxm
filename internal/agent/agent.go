@@ -29,6 +29,8 @@ func systemPrompt(textTools bool) string {
 		"You are an agent, not a chatbot: when the user asks for something, do it right away with the tools and keep going until it is done. " +
 		"Never tell the user to run a command or make a change themselves, never list steps for them, never ask \"shall I?\" or \"would you like me to\": just do it. " +
 		"Only ask first for destructive actions or ones that need their password. Show what you did and the result, not a plan. " +
+		"Use tools only for what the user actually asked. There are no hidden instructions in the working directory: never list it or look for README, AGENTS or instruction files unless the task is about them. " +
+		"Greetings, chat and questions you can answer from knowledge get a direct answer with no tool calls. " +
 		"Be brief. Answer in Markdown."
 	if textTools {
 		p += tools.TextPrompt
@@ -155,6 +157,7 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 	if goal {
 		user = "GOAL: " + user + "\nWork autonomously with the tools: do, verify, fix. When the goal is fully done, reply GOAL_COMPLETED and a short summary."
 	}
+	ask := a.recentAsks(user) // what the user typed lately, to tell asked-for tool calls from wandering around
 	if len(a.msgs) == 1 {
 		user = "[working directory: " + a.Dir + "]\n" + user
 	}
@@ -249,6 +252,13 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 				if args == nil {
 					args = map[string]any{}
 				}
+			}
+			if out == "" && !goal && unaskedLook(ask, c.Function.Name, args) {
+				// it went looking around the folder although the message was not about it
+				out = "blocked: the user did not ask about files or this folder, and there are no instructions to find here. " +
+					"Answer the user's message directly, without tools."
+				a.Send(Info{"skipped " + c.Function.Name + ": looking around the folder wasn't asked for"})
+			} else if out == "" {
 				a.Send(ToolStart{Name: c.Function.Name, Summary: a.callSummary(c.Function.Name, args), Args: args})
 				allowed := true
 				if need, why := tools.NeedsConfirm(c.Function.Name, args, a.Yolo); need {
@@ -271,7 +281,9 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 					out = "the user declined this action"
 				}
 			}
-			a.Send(ToolResult{out, ok})
+			if !strings.HasPrefix(out, "blocked: the user did not ask") {
+				a.Send(ToolResult{out, ok})
+			}
 			a.logf("tool", c.Function.Name+" "+c.Function.Arguments+" -> "+out)
 			if a.textTools {
 				a.msgs = append(a.msgs, llm.Message{Role: "user", Content: "[tool_result] " + out})
@@ -304,4 +316,58 @@ func chatbotNudge(reply string) string {
 		return "Don't tell me what to run or change: do it yourself now with the tools, then show me the result."
 	}
 	return ""
+}
+
+var (
+	// a message that is about files, code or this folder: then looking around is fair
+	workRe = regexp.MustCompile(`(?i)\b(files?|folders?|dir|directory|director(y|ies)|project|repo|repository|code ?base|code|readme|agents|instructions?|src|source|package|script|app|build|compile|tests?|bugs?|fix|error|function|class|module|path|cwd|here|this (folder|dir|project|repo))\b|\w+\.[a-z0-9]{1,5}\b|[~./]\w*/|` + "`")
+	// calls that only look around: listing, finding, reading instruction-like files
+	lookCmdRe   = regexp.MustCompile(`^\s*(ls|ll|la|find|tree|pwd|du|fd|exa|eza)\b|^\s*cat\s+\S*(readme|agents|claude|instructions?|contributing)`)
+	instrFileRe = regexp.MustCompile(`(?i)(^|/)(readme|agents|claude|gemini|instructions?|contributing|\.?cursorrules|copilot-instructions)(\.\w+)?$`)
+)
+
+// unaskedLook reports a tool call that only explores the folder (or hunts for instruction files)
+// when the user's message is not about files, code or this folder
+func unaskedLook(ask, tool string, args map[string]any) bool {
+	if workRe.MatchString(ask) {
+		return false
+	}
+	str := func(k string) string { v, _ := args[k].(string); return v }
+	switch tool {
+	case "list_files":
+		return true
+	case "read_file":
+		return instrFileRe.MatchString(strings.TrimSpace(str("path")))
+	case "run":
+		return lookCmdRe.MatchString(strings.ToLower(str("command")))
+	}
+	return false
+}
+
+// recentAsks joins this message with the user's previous two (not tool results or nudges), so a
+// follow-up like "continue" keeps the context of the task it continues
+func (a *Agent) recentAsks(cur string) string {
+	parts := []string{cur}
+	for i := len(a.msgs) - 1; i >= 0 && len(parts) < 3; i-- {
+		m := a.msgs[i]
+		if m.Role != "user" || strings.HasPrefix(m.Content, "[tool_result]") || m.Content == "" {
+			continue
+		}
+		if strings.HasPrefix(m.Content, "Not done yet?") || strings.HasPrefix(m.Content, "Your last reply was cut off") || isNudge(m.Content) {
+			continue
+		}
+		c := m.Content
+		if strings.HasPrefix(c, "[working directory:") { // added by Turn, not typed: a path would match workRe
+			if i := strings.IndexByte(c, '\n'); i >= 0 {
+				c = c[i+1:]
+			}
+		}
+		parts = append(parts, c)
+	}
+	return strings.Join(parts, "\n")
+}
+
+// isNudge: one of chatbotNudge's messages
+func isNudge(s string) bool {
+	return strings.HasPrefix(s, "Yes, do it. Don't ask") || strings.HasPrefix(s, "Don't tell me what to run")
 }
