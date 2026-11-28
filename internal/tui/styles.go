@@ -130,5 +130,8 @@ func stripZW(s string) string {
 	return s
 }
 
+// AutoSubmit is submitted once a model is connected (main sets it for -compact).
+var AutoSubmit string
+
 // Version is shown in the welcome box; main sets it from the build.
 var Version = "dev"

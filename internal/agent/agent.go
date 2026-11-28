@@ -161,8 +161,17 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 	a.msgs = append(a.msgs, llm.Message{Role: "user", Content: user})
 	a.logf("user", user)
 	defer a.Save()
-	nudges, pushed := 0, false
+	nudges, pushed, compacts := 0, false, 0
 	for {
+		// close to the context limit: fold the older part into a summary first
+		if compacts < 3 && a.needsCompact(ctx) {
+			compacts++
+			if n, err := a.Compact(ctx); err == nil {
+				a.Send(Info{fmt.Sprintf("context nearly full: compacted %d earlier messages into a summary", n)})
+			} else if ctx.Err() == nil {
+				a.Send(Info{"compacting failed: " + err.Error()})
+			}
+		}
 		a.Send(AssistantStart{})
 		t0 := time.Now()
 		var defs []any
@@ -181,6 +190,15 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 		if ctx.Err() != nil {
 			a.Send(TurnDone{Cancelled: true})
 			return
+		}
+		if tooLong(err, res) && compacts < 3 {
+			compacts++
+			n, cerr := a.Compact(ctx)
+			if cerr == nil {
+				a.Send(Info{fmt.Sprintf("context full: compacted %d earlier messages into a summary, continuing", n)})
+				continue
+			}
+			err = fmt.Errorf("the conversation no longer fits in the model's context (%v)", cerr)
 		}
 		if err != nil {
 			a.Send(TurnDone{Err: err})

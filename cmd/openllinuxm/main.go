@@ -31,6 +31,7 @@ func main() {
 	list := flag.Bool("list", false, "list local servers and models, then exit")
 	showVer := flag.Bool("version", false, "print the version")
 	cont := flag.Bool("c", false, "continue the last session")
+	compact := flag.Bool("compact", false, "with -c or -resume: compact the session (the model summarizes it) and continue the work")
 	resume := flag.String("resume", "", "continue the session saved in this file")
 	importLog := flag.String("import-log", "", "rebuild a session from the log, from this time on (RFC3339), then continue it")
 	flag.Usage = func() {
@@ -106,6 +107,9 @@ func main() {
 	lipgloss.SetColorProfile(termenv.EnvColorProfile())
 	lipgloss.SetHasDarkBackground(true)
 	tui.Version = version
+	if *compact {
+		tui.AutoSubmit = "/compact"
+	}
 	m := tui.New(a, cfg)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	a.Send = func(v any) { p.Send(v) }

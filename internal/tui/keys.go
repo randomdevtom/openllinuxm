@@ -20,6 +20,7 @@ var slashCmds = []slashCmd{
 	{"/model", "switch model or server"},
 	{"/clear", "start a new chat"},
 	{"/goal", "work on a task until it is done"},
+	{"/compact", "summarize the session to free context, then continue the work"},
 	{"/think", "turn reasoning on or off"},
 	{"/yolo", "run commands without asking"},
 	{"/cd", "change the working directory"},
@@ -86,6 +87,11 @@ func (m *model) choose(it pickItem) tea.Cmd {
 		m.info("model: " + it.model + " @ " + it.srv.Name)
 	}
 	m.layout()
+	if AutoSubmit != "" { // -compact on the command line: run it once the model is connected
+		c := m.submit(AutoSubmit)
+		AutoSubmit = ""
+		return tea.Batch(m.statsCmd(), c)
+	}
 	return m.statsCmd()
 }
 
@@ -350,6 +356,29 @@ func (m *model) submit(text string) tea.Cmd {
 				m.info("working directory: " + m.agent.Dir + " (new chat)")
 			}
 			return nil
+		case "/compact":
+			if m.agent.Srv == nil {
+				m.fail("no model selected · /model")
+				return nil
+			}
+			m.add(&block{kind: kUser, text: "/compact", done: true})
+			m.busy, m.turnStart, m.quitArmed, m.turnTokens, m.showKeys = true, time.Now(), false, 0, false
+			m.verb = "Compacting"
+			m.stopTypeAhead()
+			ctx, cancel := context.WithCancel(context.Background())
+			m.cancel = cancel
+			m.refresh(true)
+			a := m.agent
+			go func() {
+				n, err := a.Compact(ctx)
+				if err != nil {
+					a.Send(agent.TurnDone{Err: err})
+					return
+				}
+				a.Send(agent.Info{Text: fmt.Sprintf("compacted %d earlier messages into a summary (new session; the old one is kept)", n)})
+				a.Turn(ctx, "Continue the task from where you left off. Only stop when all of it is done.", false)
+			}()
+			return tea.Batch(m.spin.Tick, m.statsCmd())
 		case "/goal":
 			if arg == "" {
 				m.info("usage: /goal <objective>")
