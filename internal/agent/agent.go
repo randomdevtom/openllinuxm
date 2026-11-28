@@ -15,10 +15,7 @@ import (
 	"github.com/randomdevtom/openllinuxm/internal/tools"
 )
 
-const (
-	maxHops     = 25 // tool calls in one normal turn
-	maxGoalHops = 60 // in /goal mode
-)
+// No step limit: a turn runs until the model is done or the user presses Esc.
 
 // systemPrompt is short and the same in every folder: local servers cache the prompt prefix,
 // so the working directory goes in the first user message instead.
@@ -164,11 +161,8 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 	a.msgs = append(a.msgs, llm.Message{Role: "user", Content: user})
 	a.logf("user", user)
 	defer a.Save()
-	limit, nudges, pushed := maxHops, 0, false
-	if goal {
-		limit = maxGoalHops
-	}
-	for hop := 0; hop < limit; hop++ {
+	nudges, pushed := 0, false
+	for {
 		a.Send(AssistantStart{})
 		t0 := time.Now()
 		var defs []any
@@ -182,7 +176,6 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 			a.textTools = true
 			a.msgs[0].Content = systemPrompt(true)
 			a.Send(Info{"this model has no native tool calling: using text tool blocks"})
-			hop--
 			continue
 		}
 		if ctx.Err() != nil {
@@ -297,8 +290,6 @@ func (a *Agent) Turn(ctx context.Context, user string, goal bool) {
 			}
 		}
 	}
-	a.Send(Info{fmt.Sprintf("stopped after %d steps (limit)", limit)})
-	a.Send(TurnDone{})
 }
 
 var (
